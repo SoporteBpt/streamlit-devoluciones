@@ -14,20 +14,24 @@ CREDENTIALS_FILE = "creds/client_secret.json"
 TOKEN_FILE = "creds/token.pickle"
 
 def autenticar():
-    creds = None
-    if os.path.exists(TOKEN_FILE):
-        with open(TOKEN_FILE, "rb") as token:
-            creds = pickle.load(token)
+    creds_json = {
+        "installed": {
+            "client_id": st.secrets["google_oauth"]["client_id"],
+            "client_secret": st.secrets["google_oauth"]["client_secret"],
+            "auth_uri": st.secrets["google_oauth"]["auth_uri"],
+            "token_uri": st.secrets["google_oauth"]["token_uri"],
+            "auth_provider_x509_cert_url": st.secrets["google_oauth"]["auth_provider_x509_cert_url"],
+            "redirect_uris": st.secrets["google_oauth"]["redirect_uris"]
+        }
+    }
 
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
-            creds = flow.run_local_server(port=0)
+    # Convierte dict a JSON string y luego a un archivo temporal en memoria
+    import io
+    creds_str = json.dumps(creds_json)
+    creds_file = io.StringIO(creds_str)
 
-        with open(TOKEN_FILE, "wb") as token:
-            pickle.dump(creds, token)
+    flow = InstalledAppFlow.from_client_secrets_file(creds_file, SCOPES)
+    creds = flow.run_local_server(port=0)
     return creds
 
 # 2. Cargar Google Sheet
