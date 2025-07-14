@@ -139,10 +139,12 @@ def main():
             column_config={
                 "Mensajero": st.column_config.SelectboxColumn(
                     "Mensajero", 
-                    options=list(mensajeros.keys()),
+                    options=list(mensajeros.keys())
+                ),
                 "Motivo Devolucion": st.column_config.SelectboxColumn(
                     "Motivo de Devolución", 
-                    options=motivos),
+                    options=motivos
+                )
             },
             num_rows="dynamic"
         )
