@@ -7,26 +7,12 @@ from google_auth_oauthlib.flow import Flow
 
 # Configuración
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-SHEET_ID = "18eBkLc9V4547Qz7SkejfRSwsWp3mCw4Y"  # ID de tu hoja de cálculo
+SHEET_ID = "18eBkLc9V4547Qz7SkejfRSwsWp3mCw4Y"
 SHEET_NAME = "Sheet1"
 
-# Listas desplegables
-motivos = [
-    "CAMBIO DE PRODUCTO", "ERRORES SELECCIONANDO CLIENTES", "FACTURAS SIN NCF",
-    "CLIENTE NO PIDIO ESO", "CLIENTE NO LO QUISO", "CLIENTE NO LO USO",
-    "FCT NO SE PUEDE MODIFICAR", "ERROR EN TIPO DE PRODUCTO", "FALTA DE TIEMPO",
-    "MERCANCIA AVERIADA", "MOTOR AVERIADO", "NO SE MONTO", "NO HAY INVENTARIO",
-    "NO RECIBIDO POR EL CLIENTE", "CLIENTE NO RECIBE ESE DIA"
-]
-
-mensajeros = {
-    "IDM-MS-01": "Juan Jose",
-    "IDM-MS-02": "Claudio Castillo",
-    "IDM-MS-03": "Enemencio Hernnadez"
-}
+# ... (tus listas motivos y mensajeros permanecen igual)
 
 def autenticar():
-    # 1. Verificar credenciales existentes
     if "credentials" in st.session_state:
         try:
             creds_info = json.loads(st.session_state["credentials"]) if isinstance(st.session_state["credentials"], str) else st.session_state["credentials"]
@@ -36,7 +22,6 @@ def autenticar():
             del st.session_state["credentials"]
             st.rerun()
 
-    # 2. Configurar flujo OAuth
     flow = Flow.from_client_config(
         client_config={
             "web": st.secrets["google_oauth"]
@@ -45,28 +30,16 @@ def autenticar():
         redirect_uri=st.secrets["google_oauth"]["redirect_uris"][0]
     )
 
-    # 3. Manejar código de autorización
     if "code" in st.query_params:
         try:
             flow.fetch_token(code=st.query_params["code"])
-            
-            # Guardar credenciales completas
-            st.session_state["credentials"] = {
-                "token": flow.credentials.token,
-                "refresh_token": flow.credentials.refresh_token,
-                "token_uri": flow.credentials.token_uri,
-                "client_id": flow.credentials.client_id,
-                "client_secret": flow.credentials.client_secret,
-                "scopes": flow.credentials.scopes
-            }
-            
+            st.session_state["credentials"] = flow.credentials.to_json()
             st.query_params.clear()
             st.rerun()
         except Exception as e:
             st.error(f"Error de autenticación: {str(e)}")
             st.stop()
 
-    # 4. Iniciar flujo de autorización
     auth_url, _ = flow.authorization_url(
         prompt="consent",
         access_type="offline",
@@ -75,7 +48,8 @@ def autenticar():
     st.link_button("🔑 Autorizar con Google", auth_url)
     st.stop()
 
-@st.cache_data(show_spinner=False)
+# Solución 1: Usando hash_funcs
+@st.cache_data(show_spinner=False, hash_funcs={Credentials: lambda _: None})
 def cargar_datos(creds):
     gc = gspread.authorize(creds)
     sh = gc.open_by_key(SHEET_ID)
