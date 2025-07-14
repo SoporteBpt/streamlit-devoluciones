@@ -39,7 +39,7 @@ def autenticar():
             }
         },
         scopes=SCOPES,
-        redirect_uri="https://your-streamlit-app-url.streamlit.app"  # Misma URL aquí
+        redirect_uri="https://yhttps://devolucion.streamlit.app/"  # Misma URL aquí
     )
     
     if "credentials" not in st.session_state:
