@@ -27,7 +27,6 @@ mensajeros = {
 }
 
 def autenticar():
-    # Crear el flujo OAuth desde los secrets
     flow = Flow.from_client_config(
         client_config={
             "web": {
@@ -35,30 +34,29 @@ def autenticar():
                 "client_secret": st.secrets["google_oauth"]["client_secret"],
                 "auth_uri": st.secrets["google_oauth"]["auth_uri"],
                 "token_uri": st.secrets["google_oauth"]["token_uri"],
-                "redirect_uris": ["https://your-streamlit-app-url.streamlit.app"]  # IMPORTANTE: Cambiar por tu URL
+                "redirect_uris": st.secrets["google_oauth"]["redirect_uris"]
             }
         },
         scopes=SCOPES,
-        redirect_uri="https://yhttps://devolucion.streamlit.app/"  # Misma URL aquí
+        redirect_uri=st.secrets["google_oauth"]["redirect_uris"][0]
     )
     
     if "credentials" not in st.session_state:
-        # Generar URL de autorización
-        auth_url, _ = flow.authorization_url(prompt="consent")
-        
+        auth_url, _ = flow.authorization_url(
+            prompt="consent",
+            access_type="offline",
+            include_granted_scopes="true"
+        )
         st.session_state["auth_url"] = auth_url
         st.link_button("🔑 Autorizar con Google", auth_url)
         st.stop()
     
-    elif "code" not in st.session_state and "credentials" not in st.session_state:
-        # Obtener el código de la URL
-        code = st.experimental_get_query_params().get("code")
-        if code:
-            st.session_state["code"] = code[0]
-            flow.fetch_token(code=code[0])
-            st.session_state["credentials"] = flow.credentials.to_json()
-            st.experimental_set_query_params()  # Limpiar la URL
-            st.rerun()
+    elif "code" in st.experimental_get_query_params():
+        code = st.experimental_get_query_params()["code"]
+        flow.fetch_token(code=code)
+        st.session_state["credentials"] = flow.credentials.to_json()
+        st.experimental_set_query_params()
+        st.rerun()
     
     if "credentials" in st.session_state:
         return Credentials.from_authorized_user_info(
