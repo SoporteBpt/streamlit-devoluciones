@@ -39,7 +39,7 @@ def autenticar():
         }
     }
     flow = InstalledAppFlow.from_client_config(creds_config, SCOPES)
-    creds = flow.run_local_server(port=0)
+    creds = flow.run_console()
     return creds
 
 @st.cache_data(show_spinner=False)
