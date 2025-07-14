@@ -1,17 +1,18 @@
 import streamlit as st
 import pandas as pd
 import gspread
+import json
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 
 # OAuth scopes
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
-# Google Sheet ID y nombre hoja
+# Google Sheet ID and sheet name
 SHEET_ID = "18eBkLc9V4547Qz7SkejfRSwsWp3mCw4Y"
 SHEET_NAME = "Sheet1"
 
-# Listas desplegables
+# Dropdown lists
 motivos = [
     "CAMBIO DE PRODUCTO", "ERRORES SELECCIONANDO CLIENTES", "FACTURAS SIN NCF",
     "CLIENTE NO PIDIO ESO", "CLIENTE NO LO QUISO", "CLIENTE NO LO USO",
@@ -27,7 +28,7 @@ mensajeros = {
 }
 
 def autenticar():
-    # Configura el flujo OAuth
+    # Initialize the OAuth flow
     flow = Flow.from_client_config(
         client_config={
             "web": st.secrets["google_oauth"]
@@ -36,32 +37,45 @@ def autenticar():
         redirect_uri=st.secrets["google_oauth"]["redirect_uris"][0]
     )
     
-    # Si ya tenemos credenciales, las retornamos
+    # Check for existing credentials
     if "credentials" in st.session_state:
-        return Credentials.from_authorized_user_info(
-            json.loads(st.session_state["credentials"]),
-            SCOPES
-        )
-    
-    # Si no hay credenciales pero hay código en la URL
-    if "code" in st.experimental_get_query_params():
-        code = st.experimental_get_query_params()["code"]
         try:
-            flow.fetch_token(code=code)
-            st.session_state["credentials"] = flow.credentials.to_json()
-            st.experimental_set_query_params()  # Limpia la URL
-            st.rerun()  # Recarga la página sin el código en la URL
+            return Credentials.from_authorized_user_info(
+                json.loads(st.session_state["credentials"]),
+                SCOPES
+            )
         except Exception as e:
-            st.error(f"Error al obtener token: {str(e)}")
+            st.error(f"Error loading credentials: {str(e)}")
+            del st.session_state["credentials"]
+            st.rerun()
+    
+    # Check for authorization code in URL
+    query_params = st.query_params
+    if "code" in query_params:
+        try:
+            # Exchange the authorization code for tokens
+            flow.fetch_token(code=query_params["code"])
+            
+            # Store the credentials in session state
+            st.session_state["credentials"] = flow.credentials.to_json()
+            
+            # Clear the code from URL
+            st.query_params.clear()
+            
+            # Reload the page without the code parameter
+            st.rerun()
+        except Exception as e:
+            st.error(f"Authentication error: {str(e)}")
             st.stop()
     
-    # Si no hay credenciales ni código, iniciamos el flujo
+    # If no credentials and no code, start authorization flow
     auth_url, _ = flow.authorization_url(
         prompt="consent",
-        access_type="offline"
+        access_type="offline",
+        include_granted_scopes="true"
     )
-    st.link_button("🔑 Autorizar con Google", auth_url)
-    st.stop()  # Detiene la ejecución hasta que se autorice
+    st.link_button("Authorize with Google", auth_url)
+    st.stop()
 
 @st.cache_data(show_spinner=False)
 def cargar_datos(creds):
@@ -78,7 +92,7 @@ def main():
     if creds:
         df, ws = cargar_datos(creds)
 
-        # Agregar columnas si no existen
+        # Add columns if they don't exist
         for col in ["Mensajero", "Motivo Devolucion"]:
             if col not in df.columns:
                 df[col] = ""
