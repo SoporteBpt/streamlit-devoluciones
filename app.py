@@ -27,42 +27,41 @@ mensajeros = {
 }
 
 def autenticar():
+    # Configura el flujo OAuth
     flow = Flow.from_client_config(
         client_config={
-            "web": {
-                "client_id": st.secrets["google_oauth"]["client_id"],
-                "client_secret": st.secrets["google_oauth"]["client_secret"],
-                "auth_uri": st.secrets["google_oauth"]["auth_uri"],
-                "token_uri": st.secrets["google_oauth"]["token_uri"],
-                "redirect_uris": st.secrets["google_oauth"]["redirect_uris"]
-            }
+            "web": st.secrets["google_oauth"]
         },
         scopes=SCOPES,
         redirect_uri=st.secrets["google_oauth"]["redirect_uris"][0]
     )
     
-    if "credentials" not in st.session_state:
-        auth_url, _ = flow.authorization_url(
-            prompt="consent",
-            access_type="offline",
-            include_granted_scopes="true"
-        )
-        st.session_state["auth_url"] = auth_url
-        st.link_button("🔑 Autorizar con Google", auth_url)
-        st.stop()
-    
-    elif "code" in st.experimental_get_query_params():
-        code = st.experimental_get_query_params()["code"]
-        flow.fetch_token(code=code)
-        st.session_state["credentials"] = flow.credentials.to_json()
-        st.experimental_set_query_params()
-        st.rerun()
-    
+    # Si ya tenemos credenciales, las retornamos
     if "credentials" in st.session_state:
         return Credentials.from_authorized_user_info(
             json.loads(st.session_state["credentials"]),
             SCOPES
         )
+    
+    # Si no hay credenciales pero hay código en la URL
+    if "code" in st.experimental_get_query_params():
+        code = st.experimental_get_query_params()["code"]
+        try:
+            flow.fetch_token(code=code)
+            st.session_state["credentials"] = flow.credentials.to_json()
+            st.experimental_set_query_params()  # Limpia la URL
+            st.rerun()  # Recarga la página sin el código en la URL
+        except Exception as e:
+            st.error(f"Error al obtener token: {str(e)}")
+            st.stop()
+    
+    # Si no hay credenciales ni código, iniciamos el flujo
+    auth_url, _ = flow.authorization_url(
+        prompt="consent",
+        access_type="offline"
+    )
+    st.link_button("🔑 Autorizar con Google", auth_url)
+    st.stop()  # Detiene la ejecución hasta que se autorice
 
 @st.cache_data(show_spinner=False)
 def cargar_datos(creds):
