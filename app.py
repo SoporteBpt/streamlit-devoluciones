@@ -6,8 +6,11 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 
 # Configuración
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-SHEET_ID = "18eBkLc9V4547Qz7SkejfRSwsWp3mCw4Y"  # ID de tu hoja de cálculo
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
+SHEET_ID = "18eBkLc9V4547Qz7SkejfRSwsWp3mCw4Y"  # Reemplaza con tu ID
 SHEET_NAME = "Sheet1"
 
 # Listas desplegables
@@ -26,11 +29,27 @@ mensajeros = {
 }
 
 def autenticar():
+    # Limpiar estado previo
+    if "auth_initialized" not in st.session_state:
+        st.session_state.clear()
+        st.session_state["auth_initialized"] = True
+    
     # 1. Verificar credenciales existentes
     if "credentials" in st.session_state:
         try:
             creds_info = json.loads(st.session_state["credentials"]) if isinstance(st.session_state["credentials"], str) else st.session_state["credentials"]
-            return Credentials.from_authorized_user_info(creds_info, SCOPES)
+            creds = Credentials.from_authorized_user_info(creds_info, SCOPES)
+            
+            # Verificación rápida de permisos
+            try:
+                gc = gspread.authorize(creds)
+                gc.open_by_key(SHEET_ID)  # Prueba de acceso
+                return creds
+            except Exception as e:
+                st.error(f"Error de permisos: {str(e)}")
+                del st.session_state["credentials"]
+                st.rerun()
+                
         except Exception as e:
             st.error(f"Error en credenciales: {str(e)}")
             del st.session_state["credentials"]
@@ -75,12 +94,31 @@ def autenticar():
     st.link_button("🔑 Autorizar con Google", auth_url)
     st.stop()
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, hash_funcs={Credentials: lambda _: None}, ttl=300)
 def cargar_datos(creds):
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_key(SHEET_ID)
-    ws = sh.worksheet(SHEET_NAME)
-    return pd.DataFrame(ws.get_all_records()), ws
+    try:
+        gc = gspread.authorize(creds)
+        
+        # Verificar acceso
+        try:
+            sh = gc.open_by_key(SHEET_ID)
+        except gspread.exceptions.APIError as e:
+            st.error(f"Error de acceso a la hoja. Verifica que esté compartida con:")
+            st.error("883052339618-4qdc0altj75tr3o1m4q78nesidp3lrhq@developer.gserviceaccount.com")
+            st.error(f"Detalle: {str(e)}")
+            st.stop()
+            
+        # Obtener hoja
+        try:
+            ws = sh.worksheet(SHEET_NAME)
+        except gspread.exceptions.WorksheetNotFound:
+            ws = sh.sheet1  # Usar primera hoja si no existe
+            
+        return pd.DataFrame(ws.get_all_records()), ws
+        
+    except Exception as e:
+        st.error(f"Error al cargar datos: {str(e)}")
+        st.stop()
 
 def main():
     st.title("📝 Gestión de Devoluciones")
@@ -100,19 +138,23 @@ def main():
             df,
             column_config={
                 "Mensajero": st.column_config.SelectboxColumn(
-                    "Mensajero", options=list(mensajeros.keys())
-                ),
+                    "Mensajero", 
+                    options=list(mensajeros.keys()),
                 "Motivo Devolucion": st.column_config.SelectboxColumn(
-                    "Motivo de Devolución", options=motivos
-                ),
+                    "Motivo de Devolución", 
+                    options=motivos),
             },
             num_rows="dynamic"
         )
 
         if st.button("💾 Guardar Cambios"):
-            values = [editable_df.columns.tolist()] + editable_df.values.tolist()
-            ws.update("A1", values)
-            st.success("Cambios guardados correctamente!")
+            try:
+                values = [editable_df.columns.tolist()] + editable_df.values.tolist()
+                ws.update("A1", values)
+                st.success("Cambios guardados correctamente!")
+                st.cache_data.clear()  # Limpiar caché
+            except Exception as e:
+                st.error(f"Error al guardar: {str(e)}")
 
 if __name__ == "__main__":
     main()
