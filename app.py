@@ -1,10 +1,10 @@
-st.session_state.clear()  # Agrega esto al inicio de tu app
 import streamlit as st
 import gspread
 import pandas as pd
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 
+st.session_state.clear()  # Agrega esto al inicio de tu app
 # Configuración
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 SHEET_ID = "TU-ID-DE-HOJA"
