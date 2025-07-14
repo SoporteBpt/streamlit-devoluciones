@@ -1,51 +1,56 @@
 import streamlit as st
-import gspread
 import pandas as pd
+import gspread
+import json
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 
-st.session_state.clear()  # Agrega esto al inicio de tu app
 # Configuración
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-SHEET_ID = "TU-ID-DE-HOJA"
+SHEET_ID = "18eBkLc9V4547Qz7SkejfRSwsWp3mCw4Y"  # ID de tu hoja de cálculo
 SHEET_NAME = "Sheet1"
 
+# Listas desplegables
+motivos = [
+    "CAMBIO DE PRODUCTO", "ERRORES SELECCIONANDO CLIENTES", "FACTURAS SIN NCF",
+    "CLIENTE NO PIDIO ESO", "CLIENTE NO LO QUISO", "CLIENTE NO LO USO",
+    "FCT NO SE PUEDE MODIFICAR", "ERROR EN TIPO DE PRODUCTO", "FALTA DE TIEMPO",
+    "MERCANCIA AVERIADA", "MOTOR AVERIADO", "NO SE MONTO", "NO HAY INVENTARIO",
+    "NO RECIBIDO POR EL CLIENTE", "CLIENTE NO RECIBE ESE DIA"
+]
+
+mensajeros = {
+    "IDM-MS-01": "Juan Jose",
+    "IDM-MS-02": "Claudio Castillo",
+    "IDM-MS-03": "Enemencio Hernnadez"
+}
+
 def autenticar():
-    # Verificar si ya estamos autenticados
+    # 1. Verificar credenciales existentes
     if "credentials" in st.session_state:
         try:
-            # Asegurarnos que las credenciales son un diccionario
-            if isinstance(st.session_state["credentials"], str):
-                creds_info = json.loads(st.session_state["credentials"])
-            else:
-                creds_info = st.session_state["credentials"]
-                
+            creds_info = json.loads(st.session_state["credentials"]) if isinstance(st.session_state["credentials"], str) else st.session_state["credentials"]
             return Credentials.from_authorized_user_info(creds_info, SCOPES)
         except Exception as e:
-            st.error(f"Error cargando credenciales: {str(e)}")
+            st.error(f"Error en credenciales: {str(e)}")
             del st.session_state["credentials"]
             st.rerun()
 
-    # Configurar el flujo OAuth
+    # 2. Configurar flujo OAuth
     flow = Flow.from_client_config(
         client_config={
-            "web": {
-                "client_id": st.secrets["google_oauth"]["client_id"],
-                "client_secret": st.secrets["google_oauth"]["client_secret"],
-                "auth_uri": st.secrets["google_oauth"]["auth_uri"],
-                "token_uri": st.secrets["google_oauth"]["token_uri"],
-                "redirect_uris": st.secrets["google_oauth"]["redirect_uris"]
-            }
+            "web": st.secrets["google_oauth"]
         },
         scopes=SCOPES,
         redirect_uri=st.secrets["google_oauth"]["redirect_uris"][0]
     )
-    # Manejar el código de autorización
+
+    # 3. Manejar código de autorización
     if "code" in st.query_params:
         try:
             flow.fetch_token(code=st.query_params["code"])
             
-            # Guardar TODAS las credenciales en formato diccionario
+            # Guardar credenciales completas
             st.session_state["credentials"] = {
                 "token": flow.credentials.token,
                 "refresh_token": flow.credentials.refresh_token,
@@ -61,7 +66,7 @@ def autenticar():
             st.error(f"Error de autenticación: {str(e)}")
             st.stop()
 
-    # Iniciar flujo de autenticación
+    # 4. Iniciar flujo de autorización
     auth_url, _ = flow.authorization_url(
         prompt="consent",
         access_type="offline",
@@ -69,21 +74,45 @@ def autenticar():
     )
     st.link_button("🔑 Autorizar con Google", auth_url)
     st.stop()
-    
-    flow.fetch_token(code=st.query_params["code"])
-    st.session_state["credentials"] = flow.credentials.to_json()
-    st.query_params.clear()
-    st.rerun()
+
+@st.cache_data(show_spinner=False)
+def cargar_datos(creds):
+    gc = gspread.authorize(creds)
+    sh = gc.open_by_key(SHEET_ID)
+    ws = sh.worksheet(SHEET_NAME)
+    return pd.DataFrame(ws.get_all_records()), ws
 
 def main():
-    st.title("Gestor de Devoluciones")
-    creds = autenticar()
+    st.title("📝 Gestión de Devoluciones")
     
-    # Tu lógica de aplicación aquí
-    gc = gspread.authorize(creds)
-    sheet = gc.open_by_key(SHEET_ID).worksheet(SHEET_NAME)
-    data = pd.DataFrame(sheet.get_all_records())
-    st.dataframe(data)
+    creds = autenticar()
+    if creds:
+        df, ws = cargar_datos(creds)
+
+        # Agregar columnas si no existen
+        for col in ["Mensajero", "Motivo Devolucion"]:
+            if col not in df.columns:
+                df[col] = ""
+
+        st.info("Edita las columnas 'Mensajero' y 'Motivo Devolución'.")
+
+        editable_df = st.data_editor(
+            df,
+            column_config={
+                "Mensajero": st.column_config.SelectboxColumn(
+                    "Mensajero", options=list(mensajeros.keys())
+                ),
+                "Motivo Devolucion": st.column_config.SelectboxColumn(
+                    "Motivo de Devolución", options=motivos
+                ),
+            },
+            num_rows="dynamic"
+        )
+
+        if st.button("💾 Guardar Cambios"):
+            values = [editable_df.columns.tolist()] + editable_df.values.tolist()
+            ws.update("A1", values)
+            st.success("Cambios guardados correctamente!")
 
 if __name__ == "__main__":
     main()
