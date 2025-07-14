@@ -1,9 +1,8 @@
 import streamlit as st
 import pandas as pd
 import gspread
-import json
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import Flow
 
 # OAuth scopes
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -28,19 +27,44 @@ mensajeros = {
 }
 
 def autenticar():
-    creds_config = {
-        "installed": {
-            "client_id": st.secrets["google_oauth"]["client_id"],
-            "client_secret": st.secrets["google_oauth"]["client_secret"],
-            "auth_uri": st.secrets["google_oauth"]["auth_uri"],
-            "token_uri": st.secrets["google_oauth"]["token_uri"],
-            "auth_provider_x509_cert_url": st.secrets["google_oauth"]["auth_provider_x509_cert_url"],
-            "redirect_uris": st.secrets["google_oauth"]["redirect_uris"]
-        }
-    }
-    flow = InstalledAppFlow.from_client_config(creds_config, SCOPES)
-    creds = flow.run_console()
-    return creds
+    # Crear el flujo OAuth desde los secrets
+    flow = Flow.from_client_config(
+        client_config={
+            "web": {
+                "client_id": st.secrets["google_oauth"]["client_id"],
+                "client_secret": st.secrets["google_oauth"]["client_secret"],
+                "auth_uri": st.secrets["google_oauth"]["auth_uri"],
+                "token_uri": st.secrets["google_oauth"]["token_uri"],
+                "redirect_uris": ["https://your-streamlit-app-url.streamlit.app"]  # IMPORTANTE: Cambiar por tu URL
+            }
+        },
+        scopes=SCOPES,
+        redirect_uri="https://your-streamlit-app-url.streamlit.app"  # Misma URL aquí
+    )
+    
+    if "credentials" not in st.session_state:
+        # Generar URL de autorización
+        auth_url, _ = flow.authorization_url(prompt="consent")
+        
+        st.session_state["auth_url"] = auth_url
+        st.link_button("🔑 Autorizar con Google", auth_url)
+        st.stop()
+    
+    elif "code" not in st.session_state and "credentials" not in st.session_state:
+        # Obtener el código de la URL
+        code = st.experimental_get_query_params().get("code")
+        if code:
+            st.session_state["code"] = code[0]
+            flow.fetch_token(code=code[0])
+            st.session_state["credentials"] = flow.credentials.to_json()
+            st.experimental_set_query_params()  # Limpiar la URL
+            st.rerun()
+    
+    if "credentials" in st.session_state:
+        return Credentials.from_authorized_user_info(
+            json.loads(st.session_state["credentials"]),
+            SCOPES
+        )
 
 @st.cache_data(show_spinner=False)
 def cargar_datos(creds):
@@ -50,32 +74,37 @@ def cargar_datos(creds):
     df = pd.DataFrame(ws.get_all_records())
     return df, ws
 
-st.title("📝 Gestión de Devoluciones")
+def main():
+    st.title("📝 Gestión de Devoluciones")
+    
+    creds = autenticar()
+    if creds:
+        df, ws = cargar_datos(creds)
 
-creds = autenticar()
-df, ws = cargar_datos(creds)
+        # Agregar columnas si no existen
+        for col in ["Mensajero", "Motivo Devolucion"]:
+            if col not in df.columns:
+                df[col] = ""
 
-# Agregar columnas si no existen
-for col in ["Mensajero", "Motivo Devolucion"]:
-    if col not in df.columns:
-        df[col] = ""
+        st.info("Edita las columnas 'Mensajero' y 'Motivo Devolución'.")
 
-st.info("Edita las columnas 'Mensajero' y 'Motivo Devolución'.")
+        editable_df = st.data_editor(
+            df,
+            column_config={
+                "Mensajero": st.column_config.SelectboxColumn(
+                    "Mensajero", options=list(mensajeros.keys())
+                ),
+                "Motivo Devolucion": st.column_config.SelectboxColumn(
+                    "Motivo de Devolución", options=motivos
+                ),
+            },
+            num_rows="dynamic"
+        )
 
-editable_df = st.data_editor(
-    df,
-    column_config={
-        "Mensajero": st.column_config.SelectboxColumn(
-            "Mensajero", options=list(mensajeros.keys())
-        ),
-        "Motivo Devolucion": st.column_config.SelectboxColumn(
-            "Motivo de Devolución", options=motivos
-        ),
-    },
-    num_rows="dynamic"
-)
+        if st.button("💾 Guardar Cambios"):
+            values = [editable_df.columns.tolist()] + editable_df.values.tolist()
+            ws.update("A1", values)
+            st.success("Cambios guardados en Google Sheets.")
 
-if st.button("💾 Guardar Cambios"):
-    values = [editable_df.columns.tolist()] + editable_df.values.tolist()
-    ws.update("A1", values)
-    st.success("Cambios guardados en Google Sheets.")
+if __name__ == "__main__":
+    main()
